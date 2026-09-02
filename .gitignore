@@ -1,0 +1,10 @@
+# 本地配置与运行状态(含敏感信息/个人数据, 不入库)
+config.ini
+registry.json
+state.json
+seen_ids.json
+seen_ids.json.bak
+monitor.log
+data/
+__pycache__/
+*.pyc
