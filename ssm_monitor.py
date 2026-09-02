@@ -39,6 +39,15 @@ EXIT_SEND_ERROR = 3
 EXIT_CONFIG_ERROR = 4
 
 
+def get_year_pattern(cfg):
+    """标书编号年份规则。配置为 auto 时自动匹配 当年/上一年 的 /C/YY 结尾, 免跨年维护。"""
+    pat = cfg.get("filter", "tender_no_pattern", fallback="auto").strip()
+    if pat.lower() == "auto":
+        yy = datetime.now().year % 100
+        return r"/C/(?:%02d|%02d)$" % (yy, (yy - 1) % 100)
+    return pat
+
+
 def load_config():
     cfg = configparser.ConfigParser()
     cfg.read(os.path.join(SCRIPT_DIR, "config.ini"), encoding="utf-8")
@@ -116,8 +125,15 @@ class Registry:
             return True  # 新增
         e["last_seen_date"] = today
         e["seen_count"] = int(e.get("seen_count") or 0) + 1
-        # 更新可变的展示字段(标题等一般不会变, 以防万一)
-        e.setdefault("title", item["title"])
+        # 回填/更新展示字段(迁移的旧记录这些字段为空)
+        if not e.get("title"):
+            e["title"] = item["title"]
+        if not e.get("category"):
+            e["category"] = item["category"]
+        if not e.get("pub_date"):
+            e["pub_date"] = item["pub_date"]
+        if not e.get("deadline"):
+            e["deadline"] = "%s %s" % (item["deadline"], item["time"])
         return e.get("status") == "pending"  # 上次发送失败 → 重试
 
     def mark_sent(self, keys):
@@ -150,8 +166,18 @@ class SsmClient:
         if ref:
             h["Referer"] = ref
         data = urllib.parse.urlencode(fields).encode() if fields else None
-        r = self.opener.open(urllib.request.Request(url, data=data, headers=h), timeout=30)
-        return r.read().decode("utf-8", errors="ignore")
+        last_err = None
+        for attempt in range(3):  # 瞬时网络抖动就地重试, 最多 3 次
+            try:
+                r = self.opener.open(urllib.request.Request(url, data=data, headers=h), timeout=30)
+                return r.read().decode("utf-8", errors="ignore")
+            except Exception as e:
+                last_err = e
+                logging.warning("请求失败(第%d次): %s %s", attempt + 1, url, e)
+                if attempt < 2:
+                    import time
+                    time.sleep(3 * (attempt + 1))
+        raise last_err
 
     @staticmethod
     def all_fields(html):
@@ -236,12 +262,12 @@ class SsmClient:
 
 # ---------------- 邮件 ----------------
 
-def format_email(new_items, retry_count, stats, page_url):
+def format_email(new_items, retry_count, stats, page_url, year_pat):
     today = datetime.now().strftime("%Y-%m-%d")
     subject = "【卫生局书面询价提醒】%s 新增 %d 条(药物/医疗消耗品)" % (today, len(new_items))
     lines = [
         "监控页面: %s" % page_url,
-        "筛选条件: 标书编号含 \"/C/26\",物品类别为「藥物」或「醫療消耗品」",
+        "筛选条件: 标书编号匹配 \"%s\",物品类别为「藥物」或「醫療消耗品」" % year_pat,
         "本次提醒 %d 条%s:" % (len(new_items), "(其中 %d 条为此前发送失败重试)" % retry_count if retry_count else ""),
         "",
     ]
@@ -417,8 +443,11 @@ def catchup_check():
     last_run = str(read_state().get("last_daily_run", ""))
     if last_run >= today:
         return 0  # 今天已跑过
-    if datetime.now().hour < DAILY_RUN_HOUR:
+    now = datetime.now()
+    if now.hour < DAILY_RUN_HOUR:
         return 0  # 还没到今天的计划时间
+    if now.hour == DAILY_RUN_HOUR:
+        return 0  # 09:00 整点小时让给日常任务, 避免并发双跑重复发信; 日常失败则 10 点补
     logging.info("检测到今日 %02d:00 日常监控未执行(last_daily_run=%s), 立即补发", DAILY_RUN_HOUR, last_run or "无")
     main()
 
@@ -429,7 +458,7 @@ def main():
     cfg = load_config()
     setup_logging(cfg)
     page_url = BASE + "TndLst.aspx"
-    year_pat = cfg.get("filter", "tender_no_pattern", fallback=r"/C/26$")
+    year_pat = get_year_pattern(cfg)
     dry_run = cfg.getboolean("general", "dry_run", fallback=False)
     registry_path = os.path.join(SCRIPT_DIR, cfg.get("general", "registry_file", fallback="registry.json"))
     seen_path = os.path.join(SCRIPT_DIR, cfg.get("general", "seen_file", fallback="seen_ids.json"))
@@ -485,7 +514,7 @@ def main():
                  stats[0], stats[3], stats[4], retry_count)
 
     if to_notify:
-        subject, body = format_email(to_notify, retry_count, stats, page_url)
+        subject, body = format_email(to_notify, retry_count, stats, page_url, year_pat)
         if dry_run:
             print("=" * 60)
             print("DRY-RUN 模式,以下为将发送的邮件内容:")
