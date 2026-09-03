@@ -4,7 +4,13 @@
 
 - 监控页面: https://www.ssm.gov.mo/tenderweb/TndLst.aspx （官网 → 公務採購 → 招標及判給資料 → 書面詢價）
 - 筛选条件: 标书编号以 `/C/YY` 结尾（`auto` 模式自动匹配当年及上一年，免跨年维护；也可在配置中写死正则）且物品类别为「藥物」或「醫療消耗品」
-- 纯 Python 标准库实现，零第三方依赖
+- 邮件/文档/状态管理均用 Python 标准库；**抓取层需要 `curl_cffi`**（2026-09-03 起目标站启用 Cloudflare 人机验证，标准库 TLS 指纹会被 403 拦截）
+
+## 依赖安装
+
+```bash
+pip install curl_cffi
+```
 
 ## 功能特性
 
