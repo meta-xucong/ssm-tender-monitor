@@ -667,17 +667,30 @@ def write_state(**kv):
 
 def catchup_check():
     """看门狗: 若今天 09:00 的日常监控未成功执行(电脑/WorkBuddy 没开), 则立即补跑一次。
-    无事可做时静默退出(exit 0)。"""
+    无事可做时静默退出(exit 0)。
+
+    防刷屏设计: 当天一旦确认"已跑过 / 无需补发"(无论是 09:00 主监控成功,
+    还是 catchup 自己补跑成功), 就写入 state.json 的 last_catchup_checked=今天;
+    之后当天内所有触发直接静默返回, 不再启动抓取/发信, 直到次日自动恢复检查。"""
     today = datetime.now().strftime("%Y-%m-%d")
-    last_run = str(read_state().get("last_daily_run", ""))
+    st = read_state()
+    # 今天已经确认过(已跑过或已补跑成功) -> 直接静默退出, 不再任何动作
+    if str(st.get("last_catchup_checked", "")) == today:
+        return 0
+    last_run = str(st.get("last_daily_run", ""))
     if last_run >= today:
-        return 0  # 今天已跑过
+        # 09:00 主监控今日已成功执行 -> 确定没漏发, 标记今日已确认后静默退出
+        write_state(last_catchup_checked=today)
+        return 0
     now = datetime.now()
     if now.hour < DAILY_RUN_HOUR:
-        return 0  # 还没到今天的计划时间
+        return 0  # 还没到今天的计划时间, 不标记(避免提前压制导致漏检)
     # 并发安全由单实例锁保证, 因此 09 点整点也可直接补发(覆盖"9点后才开机"的场景)
     logging.info("检测到今日 %02d:00 日常监控未执行(last_daily_run=%s), 立即补发", DAILY_RUN_HOUR, last_run or "无")
     main()
+    # 补跑成功后 _main 会把 last_daily_run 写为今天; 标记今日已处理, 避免当天重复补跑刷屏
+    if str(read_state().get("last_daily_run", "")) >= today:
+        write_state(last_catchup_checked=today)
 
 
 # ---------------- 单实例锁(防止多个触发器并发导致重复发信) ----------------
