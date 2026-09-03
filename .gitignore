@@ -2,6 +2,7 @@
 config.ini
 registry.json
 state.json
+.monitor.lock
 seen_ids.json
 seen_ids.json.bak
 monitor.log

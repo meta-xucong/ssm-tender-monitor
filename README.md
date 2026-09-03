@@ -15,8 +15,9 @@
 | Fail-closed | 抓取失败/页面结构变更/配置缺失时不发邮件、不更新状态，按退出码区分（2=抓取异常 3=发送失败 4=配置未填） |
 | 每日落盘 | `data/raw_YYYY-MM-DD.json` 保存当天原始抓取，可审计回溯 |
 | 周报 | `--weekly` 模式汇总本周运行统计、新增条目、未来 7 天截标提醒 |
-| 漏跑补发 | `--catchup` 模式：若当天定时任务没跑（电脑没开），下次开机后自动补跑；09 点整让给日常任务避免并发 |
+| 漏跑补发 | `--catchup` 模式：当天 09:00 没跑（电脑没开）时自动补跑一次。**幂等**——当天已成功跑过就零输出静默退出；单实例锁防止多触发器并发重复发信 |
 | 网络重试 | 每次请求失败就地重试 3 次, 瞬时抖动不会导致整天漏报 |
+| 详情附件 | 新标书自动点进"查詢"抓取详情(項目清單/數量/備註/條款PDF直鏈/附件列表), 每条生成一份 Word(.docx) 随邮件附件发送, 存档于 data/docs/ |
 | 邮件追踪行 | 每封提醒邮件末尾带 `抓取X条→符合Y条→提醒Z条` 流水线追踪 |
 
 ## 快速开始
@@ -40,13 +41,20 @@ python ssm_monitor.py --catchup  # 补发检查(漏跑则补跑)
 
 **方式一：Windows 任务计划程序**（推荐，系统级可靠）
 
-右键“以管理员身份运行” `install_task.bat`，注册每天 09:00 的任务。改时间编辑 bat 里的 `/ST 09:00`。
+右键“以管理员身份运行” `install_task.bat`，注册两个任务：
+
+- `SSM_WrittenQuotation_Monitor`：每天 09:00 主监控（改时间编辑 bat 里的 `/ST 09:00`）
+- `SSM_WrittenQuotation_Catchup`：**开机/登录时**补跑 `--catchup`，今天已跑过就静默退出
+
+只想要补跑、把每日监控交给 WorkBuddy 的话，删掉 bat 里第一个 `schtasks` 行即可。两者并存也不会重复发信（有单实例锁 + 注册表去重）。
 
 **方式二：WorkBuddy 自动化**
 
-- 每天 09:00 运行 `python ssm_monitor.py`
-- 每小时运行 `python ssm_monitor.py --catchup`（漏跑补发）
+- 每天 09:00 运行 `python ssm_monitor.py`（主监控）
+- 每天 15:00 运行 `python ssm_monitor.py --catchup`（漏跑补发；**正常情况零输出，不要回复任何消息**）
 - 每周五 17:00 运行 `python ssm_monitor.py --weekly`（周报）
+
+> 补发检查不要设成每小时：脚本虽然幂等、不会重复发信，但每次触发都会产生一条会话消息，等于每小时打扰一次。一天一个检查点足够。
 
 ## 文件说明
 
@@ -57,6 +65,7 @@ python ssm_monitor.py --catchup  # 补发检查(漏跑则补跑)
 | `config.ini` | 实际配置（含密码） | ❌ gitignore |
 | `registry.json` | 去重注册表（**勿删**，删了会全量重发） | ❌ gitignore |
 | `state.json` | 上次运行日期（补发依据） | ❌ gitignore |
+| `.monitor.lock` | 单实例锁（防并发重复发信，超时 15 分钟自动失效） | ❌ gitignore |
 | `monitor.log` | 运行日志 | ❌ gitignore |
 | `data/raw_*.json` | 每日抓取存档 | ❌ gitignore |
 | `install_task.bat` | Windows 定时任务安装脚本 | ✅ |
