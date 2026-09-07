@@ -10,7 +10,8 @@ REM
 REM 说明: 如果已经用 WorkBuddy 自动化跑每日 09:00 监控, 可以只装任务2,
 REM        把任务1 那行删掉即可, 两者同时存在也不会重复发信(有单实例锁)。
 REM ==========================================================
-set PYEXE=C:\Users\Administrator\.workbuddy\binaries\python\versions\3.13.12\python.exe
+REM 注意: 2026-09-03 起站点启用 Cloudflare 验证, 必须用装了 curl_cffi 的 venv 解释器
+set PYEXE=C:\Users\Administrator\.workbuddy\binaries\python\envs\default\Scripts\python.exe
 set SCRIPT=C:\Users\Administrator\WorkBuddy\2026-09-02-10-16-53\ssm_monitor.py
 
 schtasks /Create /TN "SSM_WrittenQuotation_Monitor" /TR "\"%PYEXE%\" \"%SCRIPT%\"" /SC DAILY /ST 09:00 /F

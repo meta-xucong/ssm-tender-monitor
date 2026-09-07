@@ -26,7 +26,7 @@
 - **抓取**: 完全保留 v1 已验证的 `SsmClient`(ASP.NET 全字段回传是关键, 不重写)。
 - **邮件**: 保留 v1 的 `smtplib` 实现; 仅修改 `format_email` 增加追踪行。
 - **配置**: `config.ini` 向后兼容, 仅 `[general]` 新增 `registry_file = registry.json`; `seen_file` 字段保留用于一次性迁移。
-- **运行环境**: 纯 Python 标准库, 继续用 managed Python 3.13, 定时方式不变(WorkBuddy 自动化 + install_task.bat)。
+- **运行环境**: managed Python 3.13 + venv(`envs/default`, 内含 curl_cffi), 定时方式不变(WorkBuddy 自动化 + install_task.bat)。
 
 ### 3.2 注册表 entry 结构
 
@@ -76,7 +76,7 @@
 ## 四、边界约束(明确不做)
 
 1. **不改抓取逻辑**: 会话流程、字段提取正则、翻页逻辑保持 v1 原样。
-2. **不加第三方依赖**: 不用 requests/bs4, 纯标准库。
+2. **第三方依赖(2026-09-03 修订)**: 站点启用 Cloudflare 人机验证(Cf-Mitigated: challenge), 标准库 urllib 的 TLS 指纹被拦截(HTTP 403), 抓取层改用 curl_cffi(impersonate=chrome)模拟浏览器指纹。必须用 venv 解释器运行: `C:\Users\Administrator\.workbuddy\binaries\python\envs\default\Scripts\python.exe`(已装 curl_cffi)。除抓取层外仍纯标准库, 不用 requests/bs4。
 3. **不引入 synbio 的其他机制**: 标题相似度去重、URL 归一化、价值评分、LLM 防幻觉、HTML 报告渲染——本场景均不需要。
 4. **不做截标临近二次提醒**(已评审为可选增强, 本期不做, 避免范围蔓延)。
 5. **dry_run 语义不变**: true 时打印邮件但不发送; 注意 dry_run 也会把条目写入注册表为 sent(用于建立基线), 文档中明示此行为。
